@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 )
 
@@ -18,7 +19,6 @@ type Config struct {
 
 func untruncate(truncatedPath string, home string) string {
 	if !strings.HasPrefix(truncatedPath, "~") {
-		fmt.Printf("Sua string não começa com '~' string: %s\n", truncatedPath)
 		return truncatedPath
 	} else {
 		incompletePath, _ := strings.CutPrefix(truncatedPath, "~")
@@ -34,7 +34,7 @@ func copiar(original string, alvo string) {
 		fmt.Printf("Erro ao ler o original: %s\n", err)
 		return
 	}
-	err = os.WriteFile(alvo, originalData, 0o755)
+	err = os.WriteFile(alvo, originalData, 0o700)
 	if err != nil {
 		fmt.Printf("Erro ao escrever a pasta de destino existe?: %s\n", err)
 	}
@@ -56,17 +56,85 @@ func listThemes() {
 	}
 }
 
+func makeTheme(name string, files []string) error {
+	home, err := os.UserHomeDir()
+	var conf Config
+	conf.Itens = make([]Item, len(files))
+	dir := filepath.Join(home, "themes", name)
+	if err != nil {
+		return err
+	}
+	for i, file := range files {
+		if strings.HasPrefix(file, "~") {
+			file = untruncate(file, home)
+		}
+		conf.Itens[i].Alvo = file // saves the path to put the target in
+		fileContentB, err := os.ReadFile(file)
+		if err != nil {
+			return err
+		}
+		// extrats info
+		fileName := filepath.Base(file)
+		// makes the directory
+		err = os.MkdirAll(dir, 0o700)
+		if err != nil {
+			return err
+		}
+		fileStream, err := os.Create(filepath.Join(dir, fileName))
+		if err != nil {
+			return err
+		}
+		// writes the config
+		_, err = fileStream.Write(fileContentB)
+		if err != nil {
+			return err
+		}
+		err = fileStream.Close()
+		if err != nil {
+			fmt.Printf("Warning error closing %s\n", err.Error())
+		}
+		// saves the name of the copy that was made
+		conf.Itens[i].Original = fileName
+	}
+	bytes, err := json.Marshal(conf)
+	if err != nil {
+		return err
+	}
+	stream, err := os.Create(filepath.Join(dir, "config.json"))
+	if err != nil {
+		return err
+	}
+	_, err = stream.Write(bytes)
+	if err != nil {
+		return err
+	}
+	err = stream.Close()
+	if err != nil {
+		fmt.Printf("Warning error closing file %s\n", err.Error())
+	}
+
+	return nil
+}
+
 func main() {
 	if len(os.Args) == 1 {
 		listThemes()
 		return
 	}
-	if len(os.Args) > 2 {
-		fmt.Printf("Uso: themes <tema> para aplicar ou themes para listalos\n")
+	if len(os.Args) < 2 {
+		fmt.Printf("Coloque o tema ou make mode\n")
 		return
 	}
 	if os.Args[1] == "-h" {
-		fmt.Printf("Uso: themes <tema> para aplicar ou themes para listalos\n")
+		fmt.Printf("Ajuda: Uso: themes <tema> para aplicar ou themes para listalos\nTambem -m <nome do novo tema> <quais arquivos para o thema>\n")
+		return
+	}
+	if os.Args[1] == "-m" {
+		// 0: programa 1: -m 2: nome do thema 3..: arquuivos
+		err := makeTheme(os.Args[2], os.Args[3:])
+		if err != nil {
+			fmt.Printf("Error creating theme %s\n", err.Error())
+		}
 		return
 	}
 	home, err := os.UserHomeDir()
